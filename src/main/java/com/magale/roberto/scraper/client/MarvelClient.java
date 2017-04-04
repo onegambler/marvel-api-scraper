@@ -8,9 +8,11 @@ import javax.ws.rs.core.Response;
 
 import static java.lang.System.currentTimeMillis;
 import static javax.ws.rs.core.MediaType.APPLICATION_JSON_TYPE;
+import static jersey.repackaged.com.google.common.base.Throwables.propagateIfPossible;
 
 public class MarvelClient {
 
+    private static final int RETRIES = 3;
     private final String endpoint;
     private final String privateKey;
     private final String publicKey;
@@ -43,7 +45,29 @@ public class MarvelClient {
             webTarget = webTarget.queryParam("offset", request.getOffset());
         }
 
-        Response clientResponse = webTarget.request(APPLICATION_JSON_TYPE).get();
+        Response clientResponse = null;
+        int retryCount = 0;
+        do {
+            try {
+                if(retryCount > 0) {
+                    try {
+                        Thread.sleep(100 * retryCount);
+                    } catch (InterruptedException e) {
+                        propagateIfPossible(e);
+                    }
+                }
+                clientResponse = webTarget.request(APPLICATION_JSON_TYPE).get();
+            } catch (Exception e) {
+                System.err.println("Failed call");
+            } finally {
+                retryCount++;
+            }
+        } while ((clientResponse == null || clientResponse.getStatus() != 200) && retryCount < RETRIES);
+
+        if (clientResponse == null) {
+            System.err.println("Reached max number of retries. Aborting...");
+            System.exit(-2);
+        }
         return clientResponse.readEntity(returnClass);
     }
 
